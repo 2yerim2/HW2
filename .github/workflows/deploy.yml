@@ -25,7 +25,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Pull the image published by CI
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $image = "${env:IMAGE_NAME}:${{ github.event.workflow_run.head_sha }}"
@@ -34,7 +34,7 @@ jobs:
           "IMAGE=$image" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Replace local container
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $old = docker ps -aq --filter "name=^${env:CONTAINER_NAME}$"
@@ -47,7 +47,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not start the new container' }
 
       - name: Verify service and model endpoint
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $url = "http://127.0.0.1:${env:HOST_PORT}/api/health"
@@ -71,5 +71,5 @@ jobs:
 
       - name: Show container logs on failure
         if: ${{ failure() }}
-        shell: pwsh
+        shell: powershell
         run: docker logs $env:CONTAINER_NAME
