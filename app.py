@@ -106,7 +106,13 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model": model_status}
+    return {
+        "ok": True,
+        "model": model_status,
+        "model_id": "distilbert-base-uncased-finetuned-sst-2-english",
+        "model_role": "informational sentiment signal; not a health-risk predictor",
+        "app_version": app.version,
+    }
 
 
 @app.get("/api/records/{day}")
@@ -140,3 +146,7 @@ def insight(day: str):
     with records_lock:
         recent = [records[d] for d in sorted(records) if target - timedelta(days=2) <= date.fromisoformat(d) <= target]
     return {"insight": insight_for(recent), "days": len(recent)}
+
+
+# Use the versioned, continuous heuristic while preserving the existing API.
+from health_scoring import score_record  # noqa: E402,F401

@@ -19,3 +19,5 @@ Dockerfile
 *.pem
 *.key
 *.crt
+evaluation
+scripts

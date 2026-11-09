@@ -9,6 +9,7 @@ env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/health-monitor
   CONTAINER_NAME: health-monitor
   HOST_PORT: "8000"
+  VALIDATION_LOG: validation/health-monitor-validation.jsonl
 
 jobs:
   deploy:
@@ -18,11 +19,28 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Check out deployment validation scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Check Docker engine and existing container
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          docker info
+          docker ps -a --filter "name=^${env:CONTAINER_NAME}$"
+          New-Item -ItemType Directory -Force -Path (Split-Path "$env:GITHUB_WORKSPACE\$env:VALIDATION_LOG") | Out-Null
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Validate service before deployment
+        shell: powershell
+        run: .\scripts\validate_service.ps1 -BaseUrl "http://127.0.0.1:${env:HOST_PORT}" -Phase pre -LogPath "$env:GITHUB_WORKSPACE\$env:VALIDATION_LOG"
 
       - name: Pull the image published by CI
         shell: powershell
@@ -69,7 +87,66 @@ jobs:
             throw "Service did not become healthy at $url"
           }
 
+      - name: Validate fixed APIs after deployment
+        shell: powershell
+        run: .\scripts\validate_service.ps1 -BaseUrl "http://127.0.0.1:${env:HOST_PORT}" -Phase post -LogPath "$env:GITHUB_WORKSPACE\$env:VALIDATION_LOG"
+
+      - name: Monitor service for 30 seconds
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "http://127.0.0.1:${env:HOST_PORT}/api/health"
+          for ($i = 1; $i -le 30; $i++) {
+            $start = [DateTimeOffset]::UtcNow
+            try {
+              $r = Invoke-WebRequest -Uri $url -TimeoutSec 3 -UseBasicParsing
+              $status = [int]$r.StatusCode
+            } catch { $status = 'error' }
+            $end = [DateTimeOffset]::UtcNow
+            Write-Host (([ordered]@{ phase='monitor'; sample=$i; start_utc=$start.ToString('o'); end_utc=$end.ToString('o'); response_ms=($end-$start).TotalMilliseconds; status=$status } | ConvertTo-Json -Compress))
+            Start-Sleep -Seconds 1
+          }
+
+      - name: Write deployment summary
+        if: ${{ always() }}
+        shell: powershell
+        run: |
+          $log = "$env:GITHUB_WORKSPACE\$env:VALIDATION_LOG"
+          $lines = if (Test-Path $log) { @(Get-Content $log | Where-Object { $_ }) } else { @() }
+          $events = @($lines | ForEach-Object { $_ | ConvertFrom-Json })
+          $success = @($events | Where-Object { $_.status -eq 200 -or $_.status -eq 201 }).Count
+          $failed = $events.Count - $success
+          $times = @($events | ForEach-Object { try { [DateTimeOffset]::Parse($_.start_utc) } catch {} } | Sort-Object)
+          $gaps = @()
+          for ($i = 1; $i -lt $times.Count; $i++) { $gaps += ($times[$i] - $times[$i-1]).TotalSeconds }
+          $maxGap = if ($gaps.Count) { [Math]::Round(($gaps | Measure-Object -Maximum).Maximum, 3) } else { 'not observed' }
+          $versions = @($events | Where-Object { $_.deployment_version -and $_.deployment_version -ne 'unknown' } | Select-Object -ExpandProperty deployment_version -Unique)
+          $representative = @($events | Where-Object { $_.kind -in @('record','insight') } | Select-Object -First 2 | ForEach-Object { "status=$($_.status), score=$($_.score), insight=$($_.insight_success), version=$($_.deployment_version)" })
+          $summary = @(
+            '# Deployment validation'
+            ''
+            "- Verification URL: http://127.0.0.1:${env:HOST_PORT}"
+            "- Validation log: ``$env:VALIDATION_LOG``"
+            "- Deployment commit/image: ``${{ github.event.workflow_run.head_sha }}``"
+            "- API events recorded: $($events.Count)"
+            "- Successful responses: $success"
+            "- Failed/unavailable responses: $failed"
+            "- Maximum observed request gap: $maxGap seconds"
+            "- Observed deployment versions: $($versions -join ', ')"
+            "- Representative responses: $($representative -join ' | ')"
+            "- Pre-deployment unavailable intervals are recorded as ``error`` events; unobserved intervals are not claimed as zero-downtime."
+          )
+          $summary -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
       - name: Show container logs on failure
         if: ${{ failure() }}
         shell: powershell
         run: docker logs $env:CONTAINER_NAME
+
+      - name: Upload validation logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-validation-${{ github.run_id }}
+          path: validation/
+          if-no-files-found: warn

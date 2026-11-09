@@ -11,6 +11,8 @@ venv/
 
 # Logs, test and tool caches
 *.log
+*.jsonl
+validation/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

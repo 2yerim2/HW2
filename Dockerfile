@@ -13,6 +13,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app.py ./app.py
+COPY health_scoring.py ./health_scoring.py
 COPY static ./static
 
 # Download the exact model into the image and run a real CPU inference as a build check.

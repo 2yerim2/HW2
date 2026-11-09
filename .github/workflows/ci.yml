@@ -20,8 +20,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Run fixed synthetic evaluation
+        shell: bash
+        run: |
+          python3 evaluation/generate_dataset.py
+          python3 evaluation/evaluate.py
+
+      - name: Run API contract validation
+        shell: bash
+        run: |
+          python3 -m pip install --disable-pip-version-check -r requirements.txt
+          python3 evaluation/validate_api.py
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
