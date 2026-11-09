@@ -37,7 +37,7 @@ jobs:
       - name: Run API contract validation
         shell: bash
         run: |
-          python3 -m pip install --disable-pip-version-check -r requirements.txt
+          python3 -m pip install --disable-pip-version-check --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
           python3 evaluation/validate_api.py
 
       - name: Log in to Docker Hub
