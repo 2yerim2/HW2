@@ -1,0 +1,17 @@
+# GitHub Actions self-hosted runner installation and runtime state
+actions-runner/
+
+# Python and local development artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+
+# Logs, test and tool caches
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
